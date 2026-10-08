@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import com.inventario.demo.Dto.CambioDTO;
 import com.inventario.demo.Dto.CompraDTO;
+import com.inventario.demo.Dto.DevolucionDTO;
+import com.inventario.demo.Dto.ReciboCambioDTO;
 import com.inventario.demo.Dto.ReciboCompraDTO;
 import com.inventario.demo.Dto.ReciboVentaDTO;
 import com.inventario.demo.Dto.MovimientoDTO;
@@ -42,6 +44,31 @@ public class ControladorMovimiento {
 	public ResponseEntity<MensajeResponse> cambio(@Valid @RequestBody CambioDTO dto) {
 		return new ResponseEntity<>(MensajeResponse.builder().mensaje("Cambio registrado")
 				.object(movimientoService.registrarCambio(dto)).build(), HttpStatus.CREATED);
+	}
+
+	@PostMapping(value = "/saveDevolucion", consumes = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<MensajeResponse> devolucion(@Valid @RequestBody DevolucionDTO dto) {
+		return new ResponseEntity<>(MensajeResponse.builder().mensaje("Devolución registrada")
+				.object(movimientoService.registrarDevolucion(dto)).build(), HttpStatus.CREATED);
+	}
+
+	@GetMapping("/cambio/{id}")
+	public ResponseEntity<ReciboCambioDTO> verCambio(@PathVariable Integer id) {
+		return ResponseEntity.ok(movimientoService.obtenerCambio(id));
+	}
+
+	@GetMapping("/listarCambios")
+	public ResponseEntity<MensajeResponse> cambios(@RequestParam Integer localId,
+			@RequestParam(defaultValue = "30") int dias) {
+		return ResponseEntity.ok(MensajeResponse.builder().mensaje("Cambios y devoluciones")
+				.object(movimientoService.listarCambios(localId, dias)).build());
+	}
+
+	@GetMapping("/listarVentas")
+	public ResponseEntity<MensajeResponse> ventas(@RequestParam Integer localId,
+			@RequestParam(defaultValue = "30") int dias) {
+		return ResponseEntity.ok(MensajeResponse.builder().mensaje("Ventas recientes")
+				.object(movimientoService.listarVentas(localId, dias)).build());
 	}
 
 	@PostMapping(value = "/saveVenta", consumes = MediaType.APPLICATION_JSON_VALUE)

@@ -1,6 +1,7 @@
 package com.inventario.demo.service;
 
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
@@ -12,6 +13,7 @@ import com.inventario.demo.modelo.Rol;
 import com.inventario.demo.modelo.Usuario;
 
 @Component
+@ConditionalOnProperty(name = "app.seed-demo-data", havingValue = "true", matchIfMissing = true)
 public class DatosIniciales implements CommandLineRunner {
 
 	private final RolRepository rolRepository;

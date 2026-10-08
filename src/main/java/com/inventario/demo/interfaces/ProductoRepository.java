@@ -17,6 +17,9 @@ public interface ProductoRepository extends JpaRepository<Producto, Integer> {
 
 	boolean existsByLocalIdLocalAndCodigoIgnoreCaseAndIdProductoNot(Integer idLocal, String codigo, Integer idProducto);
 
+	@Query("select p.codigo from Producto p where p.local.idLocal = :idLocal and p.tipo = :categoria")
+	List<String> findCodigosPorCategoria(Integer idLocal, String categoria);
+
 	List<Producto> findByLocalIdLocalAndActivoTrueOrderByNombreAsc(Integer idLocal);
 
 	@Query("""

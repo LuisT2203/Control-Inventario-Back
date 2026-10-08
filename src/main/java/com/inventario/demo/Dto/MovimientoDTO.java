@@ -20,6 +20,7 @@ public class MovimientoDTO {
 
 	private String nombreProducto;
 	private String codigoProducto;
+	private String tallaProducto;
 
 	@NotNull(message = "El tipo de movimiento es obligatorio")
 	private TipoMovimiento tipo;

@@ -42,6 +42,8 @@ class MovimientoServiceTest {
 	@Mock
 	private com.inventario.demo.interfaces.CompraRepository compraRepository;
 	@Mock
+	private com.inventario.demo.interfaces.CambioRepository cambioRepository;
+	@Mock
 	private ProductoMapper productoMapper;
 
 	private MovimientoService service;
@@ -51,7 +53,7 @@ class MovimientoServiceTest {
 	@BeforeEach
 	void setUp() {
 		service = new MovimientoService(movimientoRepository, productoRepository, ventaRepository, compraRepository,
-				productoMapper);
+				cambioRepository, productoMapper);
 		chompa = ficha(1, "4");
 		falda = ficha(2, "1");
 	}
@@ -107,46 +109,178 @@ class MovimientoServiceTest {
 	}
 
 	@Test
-	void cambioDejaDosLineas() {
+	void cambioGuardaCabeceraConNumeroYDiferencia() {
+		chompa.setPrecioVenta(new BigDecimal("35"));
+		falda.setPrecioVenta(new BigDecimal("5"));
 		when(productoRepository.findByIdForUpdate(1)).thenReturn(Optional.of(chompa));
 		when(productoRepository.findByIdForUpdate(2)).thenReturn(Optional.of(falda));
+		when(ventaRepository.findById(7)).thenReturn(Optional.of(venta(7)));
+		when(movimientoRepository.findByVentaIdVentaOrderByIdMovimientoAsc(7))
+				.thenReturn(java.util.List.of(movDe(2), movDe(9)));
+		when(movimientoRepository.sumadoDevuelto(7, 2)).thenReturn(BigDecimal.ZERO);
 		when(productoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-		when(movimientoRepository.save(any())).thenAnswer(inv -> {
-			Movimiento movimiento = inv.getArgument(0);
-			movimiento.setIdMovimiento(movimiento.getTipo() == TipoMovimiento.DEVOLUCION ? 10 : 11);
-			return movimiento;
+		when(cambioRepository.save(any())).thenAnswer(inv -> {
+			com.inventario.demo.modelo.Cambio c = inv.getArgument(0);
+			c.setIdCambio(4);
+			return c;
 		});
+		when(movimientoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
 		CambioDTO cambio = new CambioDTO();
 		cambio.setIdProductoEntra(2);
 		cambio.setCantidadEntra(new BigDecimal("1"));
 		cambio.setIdProductoSale(1);
 		cambio.setCantidadSale(new BigDecimal("2"));
+		cambio.setPrecioUnitario(new BigDecimal("35"));
+		cambio.setIdVenta(7);
 
-		var lineas = service.registrarCambio(cambio);
+		var recibo = service.registrarCambio(cambio);
 
-		assertEquals(2, lineas.size());
-		assertEquals(lineas.get(0).getGrupoCambio(), lineas.get(1).getGrupoCambio());
+		assertEquals(4, recibo.getIdCambio());
+		assertEquals(7, recibo.getIdVenta());
+		assertEquals(2, recibo.getLineas().size());
+		assertEquals(0, new BigDecimal("65.00").compareTo(recibo.getDiferencia()));
 		assertEquals(0, new BigDecimal("2.00").compareTo(chompa.getStock()));
 		assertEquals(0, new BigDecimal("2.00").compareTo(falda.getStock()));
 	}
 
 	@Test
-	void cambioSinStockNoGuardaNingunaLinea() {
+	void cambioSinStockNoGuardaNada() {
 		when(productoRepository.findByIdForUpdate(1)).thenReturn(Optional.of(chompa));
 		when(productoRepository.findByIdForUpdate(2)).thenReturn(Optional.of(falda));
+		when(ventaRepository.findById(7)).thenReturn(Optional.of(venta(7)));
+		when(movimientoRepository.findByVentaIdVentaOrderByIdMovimientoAsc(7))
+				.thenReturn(java.util.List.of(movDe(2)));
+		when(movimientoRepository.sumadoDevuelto(7, 2)).thenReturn(BigDecimal.ZERO);
 
 		CambioDTO cambio = new CambioDTO();
 		cambio.setIdProductoEntra(2);
 		cambio.setCantidadEntra(new BigDecimal("1"));
 		cambio.setIdProductoSale(1);
 		cambio.setCantidadSale(new BigDecimal("9"));
+		cambio.setIdVenta(7);
 
 		ReglaNegocioException error = assertThrows(ReglaNegocioException.class, () -> service.registrarCambio(cambio));
 
 		assertEquals(HttpStatus.CONFLICT, error.getStatus());
 		assertEquals(0, new BigDecimal("4").compareTo(chompa.getStock()));
 		assertEquals(0, new BigDecimal("1").compareTo(falda.getStock()));
+		verify(cambioRepository, never()).save(any());
+		verify(movimientoRepository, never()).save(any());
+	}
+
+	@Test
+	void cambioSinVentaSeRechaza() {
+		CambioDTO cambio = new CambioDTO();
+		cambio.setIdProductoEntra(2);
+		cambio.setCantidadEntra(new BigDecimal("1"));
+		cambio.setIdProductoSale(1);
+		cambio.setCantidadSale(new BigDecimal("1"));
+
+		ReglaNegocioException error = assertThrows(ReglaNegocioException.class, () -> service.registrarCambio(cambio));
+
+		assertEquals(HttpStatus.BAD_REQUEST, error.getStatus());
+		verify(cambioRepository, never()).save(any());
+		verify(movimientoRepository, never()).save(any());
+	}
+
+	@Test
+	void cambioConFichaAjenaALaVentaSeRechaza() {
+		when(ventaRepository.findById(7)).thenReturn(Optional.of(venta(7)));
+		when(movimientoRepository.findByVentaIdVentaOrderByIdMovimientoAsc(7))
+				.thenReturn(java.util.List.of(movDe(9)));
+
+		CambioDTO cambio = new CambioDTO();
+		cambio.setIdProductoEntra(2);
+		cambio.setCantidadEntra(new BigDecimal("1"));
+		cambio.setIdProductoSale(1);
+		cambio.setCantidadSale(new BigDecimal("1"));
+		cambio.setIdVenta(7);
+
+		ReglaNegocioException error = assertThrows(ReglaNegocioException.class, () -> service.registrarCambio(cambio));
+
+		assertEquals(HttpStatus.BAD_REQUEST, error.getStatus());
+		verify(cambioRepository, never()).save(any());
+		verify(movimientoRepository, never()).save(any());
+	}
+
+	@Test
+	void devolucionSinStockGuardaSoloCabecera() {
+		when(ventaRepository.findById(7)).thenReturn(Optional.of(venta(7)));
+		when(movimientoRepository.findByVentaIdVentaOrderByIdMovimientoAsc(7))
+				.thenReturn(java.util.List.of(movDe(1, "1")));
+		when(movimientoRepository.sumadoDevuelto(7, 1)).thenReturn(BigDecimal.ZERO);
+		when(cambioRepository.save(any())).thenAnswer(inv -> {
+			com.inventario.demo.modelo.Cambio c = inv.getArgument(0);
+			c.setIdCambio(5);
+			return c;
+		});
+
+		com.inventario.demo.Dto.DevolucionDTO dev = devolucion(7, false, "35");
+		dev.getLineas().get(0).setIdProducto(1);
+		dev.getLineas().get(0).setCantidad(new BigDecimal("1"));
+		dev.setMotivo("Falla de fábrica");
+
+		var recibo = service.registrarDevolucion(dev);
+
+		assertEquals(5, recibo.getIdCambio());
+		assertEquals(0, recibo.getLineas().size());
+		assertEquals(false, recibo.isVuelveStock());
+		assertEquals(0, new BigDecimal("4").compareTo(chompa.getStock()));
+		verify(movimientoRepository, never()).save(any());
+		verify(cambioRepository).save(any());
+	}
+
+	@Test
+	void devolucionConStockGuardaEntradas() {
+		when(productoRepository.findByIdForUpdate(1)).thenReturn(Optional.of(chompa));
+		when(productoRepository.findByIdForUpdate(2)).thenReturn(Optional.of(falda));
+		when(ventaRepository.findById(7)).thenReturn(Optional.of(venta(7)));
+		when(movimientoRepository.findByVentaIdVentaOrderByIdMovimientoAsc(7))
+				.thenReturn(java.util.List.of(movDe(1, "2"), movDe(2, "1")));
+		when(movimientoRepository.sumadoDevuelto(7, 1)).thenReturn(BigDecimal.ZERO);
+		when(movimientoRepository.sumadoDevuelto(7, 2)).thenReturn(BigDecimal.ZERO);
+		when(productoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+		when(cambioRepository.save(any())).thenAnswer(inv -> {
+			com.inventario.demo.modelo.Cambio c = inv.getArgument(0);
+			c.setIdCambio(6);
+			return c;
+		});
+		when(movimientoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+		com.inventario.demo.Dto.DevolucionDTO dev = devolucion(7, true, null);
+		dev.getLineas().get(0).setIdProducto(1);
+		dev.getLineas().get(0).setCantidad(new BigDecimal("2"));
+		com.inventario.demo.Dto.LineaDevolucionDTO extra = new com.inventario.demo.Dto.LineaDevolucionDTO();
+		extra.setIdProducto(2);
+		extra.setCantidad(new BigDecimal("1"));
+		dev.getLineas().add(extra);
+
+		var recibo = service.registrarDevolucion(dev);
+
+		assertEquals(6, recibo.getIdCambio());
+		assertEquals(2, recibo.getLineas().size());
+		assertEquals(TipoMovimiento.ENTRADA, recibo.getLineas().get(0).getTipo());
+		assertEquals(0, new BigDecimal("6.00").compareTo(chompa.getStock()));
+		assertEquals(0, new BigDecimal("2.00").compareTo(falda.getStock()));
+	}
+
+	@Test
+	void devolucionMasDeLoCompradoSeRechaza() {
+		when(ventaRepository.findById(7)).thenReturn(Optional.of(venta(7)));
+		when(movimientoRepository.findByVentaIdVentaOrderByIdMovimientoAsc(7))
+				.thenReturn(java.util.List.of(movDe(1, "2")));
+		when(movimientoRepository.sumadoDevuelto(7, 1)).thenReturn(new BigDecimal("1.50"));
+
+		com.inventario.demo.Dto.DevolucionDTO dev = devolucion(7, true, null);
+		dev.getLineas().get(0).setIdProducto(1);
+		dev.getLineas().get(0).setCantidad(new BigDecimal("1"));
+
+		ReglaNegocioException error = assertThrows(ReglaNegocioException.class,
+				() -> service.registrarDevolucion(dev));
+
+		assertEquals(HttpStatus.BAD_REQUEST, error.getStatus());
+		verify(cambioRepository, never()).save(any());
 		verify(movimientoRepository, never()).save(any());
 	}
 
@@ -352,5 +486,34 @@ class MovimientoServiceTest {
 		dto.setTipo(tipo);
 		dto.setCantidad(new BigDecimal(cantidad));
 		return dto;
+	}
+
+	private com.inventario.demo.modelo.Venta venta(int id) {
+		com.inventario.demo.modelo.Venta venta = new com.inventario.demo.modelo.Venta();
+		venta.setIdVenta(id);
+		return venta;
+	}
+
+	private Movimiento movDe(int idProducto) {
+		return movDe(idProducto, "1");
+	}
+
+	private Movimiento movDe(int idProducto, String cantidad) {
+		Producto producto = new Producto();
+		producto.setIdProducto(idProducto);
+		Movimiento movimiento = new Movimiento();
+		movimiento.setProducto(producto);
+		movimiento.setCantidad(new BigDecimal(cantidad));
+		return movimiento;
+	}
+
+	private com.inventario.demo.Dto.DevolucionDTO devolucion(int idVenta, boolean vuelve, String monto) {
+		com.inventario.demo.Dto.LineaDevolucionDTO linea = new com.inventario.demo.Dto.LineaDevolucionDTO();
+		com.inventario.demo.Dto.DevolucionDTO dev = new com.inventario.demo.Dto.DevolucionDTO();
+		dev.setLineas(new java.util.ArrayList<>(java.util.List.of(linea)));
+		dev.setVuelveStock(vuelve);
+		dev.setMontoDevuelto(monto == null ? null : new BigDecimal(monto));
+		dev.setIdVenta(idVenta);
+		return dev;
 	}
 }

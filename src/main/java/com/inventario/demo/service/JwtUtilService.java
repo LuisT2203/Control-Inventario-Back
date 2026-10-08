@@ -6,6 +6,7 @@ import java.util.function.Function;
 
 import javax.crypto.SecretKey;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
@@ -13,13 +14,32 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 
 @Service
 public class JwtUtilService {
 
-	private static final String JWT_SECRET_KEY = "aW52ZW50YXJpby1rYXJkZXgtbHVpcy10ZXJhbi0yMDI2LWtleSE=";
 	private static final long JWT_TIME_VALIDITY = 1000L * 60 * 60;
 	private static final long JWT_TIME_REFRESH_VALIDATE = 1000L * 60 * 60 * 24 * 7;
+
+	@Value("${app.jwt.secret}")
+	private String jwtSecretBase64;
+
+	private SecretKey signingKey;
+
+	@PostConstruct
+	void validarClave() {
+		try {
+			byte[] decoded = Base64.getDecoder().decode(jwtSecretBase64 == null ? "" : jwtSecretBase64.trim());
+			if (decoded.length < 32) {
+				throw new IllegalStateException(
+						"app.jwt.secret debe tener al menos 256 bits (32 bytes en base64). Revisa la variable JWT_SECRET.");
+			}
+			signingKey = Keys.hmacShaKeyFor(decoded);
+		} catch (IllegalArgumentException e) {
+			throw new IllegalStateException("app.jwt.secret no es base64 valido. Revisa la variable JWT_SECRET.", e);
+		}
+	}
 
 	public String generateToken(UserDetails userDetails, String tipo) {
 		return build(userDetails, tipo, JWT_TIME_VALIDITY);
@@ -66,6 +86,6 @@ public class JwtUtilService {
 	}
 
 	private SecretKey getSigningKey() {
-		return Keys.hmacShaKeyFor(Base64.getDecoder().decode(JWT_SECRET_KEY));
+		return signingKey;
 	}
 }

@@ -1,6 +1,7 @@
 package com.inventario.demo.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -173,6 +174,28 @@ class ProductoServiceTest {
 		local.setNombre(local.getCodigo());
 		local.setExigeTalla(exigeTalla);
 		return local;
+	}
+
+	@Test
+	void siguienteCodigoProponeElQueSigue() {
+		when(productoRepository.findCodigosPorCategoria(1, "BLUSAS"))
+				.thenReturn(java.util.List.of("BLU-01", "BLU-08", "BLU-03", "XX-99"));
+
+		var r = service.siguienteCodigo(1, "BLUSAS");
+
+		assertEquals("BLU", r.getPrefijo());
+		assertEquals(9, r.getSiguiente());
+		assertEquals("BLU-09", r.getCodigo());
+	}
+
+	@Test
+	void siguienteCodigoSinPreviosDevuelveNulos() {
+		when(productoRepository.findCodigosPorCategoria(1, "NUEVA"))
+				.thenReturn(java.util.List.of());
+
+		var r = service.siguienteCodigo(1, "NUEVA");
+
+		assertNull(r.getCodigo());
 	}
 
 	private ProductoDTO ficha(String tipo, String talla) {

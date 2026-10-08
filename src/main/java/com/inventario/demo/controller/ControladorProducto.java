@@ -58,6 +58,13 @@ public class ControladorProducto {
 				.object(productoService.listarCategorias(localId)).build());
 	}
 
+	@GetMapping("/siguienteCodigo")
+	public ResponseEntity<MensajeResponse> siguiente(@RequestParam Integer localId,
+			@RequestParam String categoria) {
+		return ResponseEntity.ok(MensajeResponse.builder().mensaje("Siguiente código")
+				.object(productoService.siguienteCodigo(localId, categoria)).build());
+	}
+
 	@GetMapping("/contarCategorias")
 	public ResponseEntity<MensajeResponse> conteo(@RequestParam Integer localId) {
 		return ResponseEntity.ok(MensajeResponse.builder().mensaje("Conteo por categoria")

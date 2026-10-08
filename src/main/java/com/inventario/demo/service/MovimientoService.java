@@ -4,7 +4,6 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -16,21 +15,27 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.inventario.demo.Dto.CambioDTO;
 import com.inventario.demo.Dto.CompraDTO;
+import com.inventario.demo.Dto.DevolucionDTO;
 import com.inventario.demo.Dto.LineaCompraDTO;
+import com.inventario.demo.Dto.ReciboCambioDTO;
 import com.inventario.demo.Dto.ReciboCompraDTO;
 import com.inventario.demo.Dto.ReciboVentaDTO;
 import com.inventario.demo.Dto.KardexDTO;
 import com.inventario.demo.Dto.LineaVentaDTO;
 import com.inventario.demo.Dto.MovimientoDTO;
 import com.inventario.demo.Dto.VentaDTO;
+import com.inventario.demo.Dto.VentaResumenDTO;
+import com.inventario.demo.interfaces.CambioRepository;
 import com.inventario.demo.interfaces.CompraRepository;
 import com.inventario.demo.interfaces.MovimientoRepository;
 import com.inventario.demo.interfaces.ProductoRepository;
 import com.inventario.demo.interfaces.VentaRepository;
 import com.inventario.demo.interfacesService.IMovimientoService;
+import com.inventario.demo.modelo.Cambio;
 import com.inventario.demo.modelo.Compra;
 import com.inventario.demo.modelo.Movimiento;
 import com.inventario.demo.modelo.Producto;
+import com.inventario.demo.modelo.TipoCambio;
 import com.inventario.demo.modelo.TipoMovimiento;
 import com.inventario.demo.modelo.Venta;
 import com.inventario.demo.utils.ModeloNotFoundException;
@@ -43,14 +48,17 @@ public class MovimientoService implements IMovimientoService {
 	private final ProductoRepository productoRepository;
 	private final VentaRepository ventaRepository;
 	private final CompraRepository compraRepository;
+	private final CambioRepository cambioRepository;
 	private final ProductoMapper productoMapper;
 
 	public MovimientoService(MovimientoRepository movimientoRepository, ProductoRepository productoRepository,
-			VentaRepository ventaRepository, CompraRepository compraRepository, ProductoMapper productoMapper) {
+			VentaRepository ventaRepository, CompraRepository compraRepository, CambioRepository cambioRepository,
+			ProductoMapper productoMapper) {
 		this.movimientoRepository = movimientoRepository;
 		this.productoRepository = productoRepository;
 		this.ventaRepository = ventaRepository;
 		this.compraRepository = compraRepository;
+		this.cambioRepository = cambioRepository;
 		this.productoMapper = productoMapper;
 	}
 
@@ -64,22 +72,196 @@ public class MovimientoService implements IMovimientoService {
 
 	@Override
 	@Transactional
-	public List<MovimientoDTO> registrarCambio(CambioDTO dto) {
+	public ReciboCambioDTO registrarCambio(CambioDTO dto) {
 		BigDecimal entra = Cantidades.positiva(dto.getCantidadEntra(), "La cantidad que vuelve");
 		BigDecimal sale = Cantidades.positiva(dto.getCantidadSale(), "La cantidad que se lleva");
 		Cantidades.noNegativo(dto.getPrecioUnitario(), "El precio");
 		if (dto.getIdProductoEntra() == null || dto.getIdProductoSale() == null) {
 			throw new ReglaNegocioException("El cambio necesita las dos fichas", HttpStatus.BAD_REQUEST);
 		}
+		Venta venta = exigirVentaOrigen(dto.getIdVenta(), dto.getIdProductoEntra());
+		validarTope(dto.getIdVenta(), dto.getIdProductoEntra(), entra);
 		bloquearEnOrden(dto.getIdProductoEntra(), dto.getIdProductoSale());
 		validarCambio(dto.getIdProductoEntra(), entra, dto.getIdProductoSale(), sale);
-		String grupo = UUID.randomUUID().toString();
+		Producto entraProducto = exigirBloqueado(dto.getIdProductoEntra());
+		BigDecimal diferencia = null;
+		if (entraProducto.getPrecioVenta() != null && dto.getPrecioUnitario() != null) {
+			diferencia = dto.getPrecioUnitario().multiply(sale)
+					.subtract(entraProducto.getPrecioVenta().multiply(entra))
+					.setScale(2, RoundingMode.HALF_UP);
+		}
+		Cambio cabecera = new Cambio();
+		cabecera.setFechaHora(LocalDateTime.now());
+		cabecera.setTipo(TipoCambio.CAMBIO);
+		cabecera.setMotivo(blancoANulo(dto.getMotivo()) == null ? "Cambio" : blancoANulo(dto.getMotivo()));
+		cabecera.setDiferencia(diferencia);
+		cabecera.setVuelveStock(true);
+		cabecera.setVenta(venta);
+		cabecera.setUsuario(usuarioActual());
+		cabecera = cambioRepository.save(cabecera);
+		String grupo = "CAMBIO-" + cabecera.getIdCambio();
 		List<MovimientoDTO> lineas = new ArrayList<>();
-		lineas.add(aDto(aplicarYaBloqueado(dto.getIdProductoEntra(), TipoMovimiento.DEVOLUCION, entra,
-				dto.getPersonaRetira(), dto.getDestino(), null, null, "Cambio", grupo)));
-		lineas.add(aDto(aplicarYaBloqueado(dto.getIdProductoSale(), TipoMovimiento.SALIDA, sale, dto.getPersonaRetira(),
-				dto.getDestino(), null, dto.getPrecioUnitario(), "Cambio", grupo)));
-		return lineas;
+		lineas.add(aDto(vincular(aplicarYaBloqueado(dto.getIdProductoEntra(), TipoMovimiento.DEVOLUCION, entra,
+				dto.getPersonaRetira(), dto.getDestino(), null, null, cabecera.getMotivo(), grupo), cabecera)));
+		lineas.add(aDto(vincular(aplicarYaBloqueado(dto.getIdProductoSale(), TipoMovimiento.SALIDA, sale,
+				dto.getPersonaRetira(), dto.getDestino(), null, dto.getPrecioUnitario(), cabecera.getMotivo(),
+				grupo), cabecera)));
+		return reciboCambio(cabecera, lineas);
+	}
+
+	@Override
+	@Transactional
+	public ReciboCambioDTO registrarDevolucion(DevolucionDTO dto) {
+		if (dto.getLineas() == null || dto.getLineas().isEmpty()) {
+			throw new ReglaNegocioException("La devolución no tiene lineas", HttpStatus.BAD_REQUEST);
+		}
+		if (dto.getIdVenta() == null) {
+			throw new ReglaNegocioException("La venta de origen es obligatoria", HttpStatus.BAD_REQUEST);
+		}
+		Venta venta = ventaRepository.findById(dto.getIdVenta())
+				.orElseThrow(() -> new ModeloNotFoundException("Venta no encontrada"));
+		java.util.Map<Integer, BigDecimal> vendido = vendidoPorProducto(dto.getIdVenta());
+		for (com.inventario.demo.Dto.LineaDevolucionDTO linea : dto.getLineas()) {
+			if (linea.getIdProducto() == null) {
+				throw new ReglaNegocioException("El producto que vuelve es obligatorio", HttpStatus.BAD_REQUEST);
+			}
+			BigDecimal cantidad = Cantidades.positiva(linea.getCantidad(), "La cantidad");
+			if (!vendido.containsKey(linea.getIdProducto())) {
+				throw new ReglaNegocioException(
+						"La ficha no está en la venta N° " + dto.getIdVenta(), HttpStatus.BAD_REQUEST);
+			}
+			BigDecimal yaDevuelto = movimientoRepository.sumadoDevuelto(dto.getIdVenta(), linea.getIdProducto());
+			BigDecimal pendiente = vendido.get(linea.getIdProducto()).subtract(yaDevuelto);
+			if (cantidad.compareTo(pendiente) > 0) {
+				throw new ReglaNegocioException("Solo quedan " + pendiente.stripTrailingZeros().toPlainString()
+						+ " por devolver en la venta N° " + dto.getIdVenta(), HttpStatus.BAD_REQUEST);
+			}
+		}
+		Cantidades.noNegativo(dto.getMontoDevuelto(), "El monto");
+		boolean vuelve = dto.getVuelveStock() == null || dto.getVuelveStock();
+		Cambio cabecera = new Cambio();
+		cabecera.setFechaHora(LocalDateTime.now());
+		cabecera.setTipo(TipoCambio.DEVOLUCION);
+		cabecera.setMotivo(blancoANulo(dto.getMotivo()) == null ? "Devolución"
+				: "Devolución: " + blancoANulo(dto.getMotivo()));
+		cabecera.setMontoDevuelto(dto.getMontoDevuelto());
+		cabecera.setVuelveStock(vuelve);
+		cabecera.setVenta(venta);
+		cabecera.setUsuario(usuarioActual());
+		cabecera = cambioRepository.save(cabecera);
+		List<MovimientoDTO> lineas = new ArrayList<>();
+		if (vuelve) {
+			for (com.inventario.demo.Dto.LineaDevolucionDTO linea : dto.getLineas()) {
+				BigDecimal cantidad = Cantidades.positiva(linea.getCantidad(), "La cantidad");
+				exigirBloqueado(linea.getIdProducto());
+				lineas.add(aDto(vincular(aplicarYaBloqueado(linea.getIdProducto(), TipoMovimiento.ENTRADA,
+						cantidad, null, null, null, null, cabecera.getMotivo(),
+						"DEVOLUCION-" + cabecera.getIdCambio()), cabecera)));
+			}
+		}
+		return reciboCambio(cabecera, lineas);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public ReciboCambioDTO obtenerCambio(Integer id) {
+		Cambio cabecera = cambioRepository.findById(id)
+				.orElseThrow(() -> new ModeloNotFoundException("Cambio no encontrado"));
+		return reciboCambio(cabecera, movimientoRepository.findByCambioIdCambioOrderByIdMovimientoAsc(id)
+				.stream().map(this::aDto).toList());
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<ReciboCambioDTO> listarCambios(Integer idLocal, int dias) {
+		if (idLocal == null) {
+			throw new ReglaNegocioException("El local es obligatorio", HttpStatus.BAD_REQUEST);
+		}
+		LocalDateTime desde = LocalDateTime.now().minusDays(Math.max(dias, 1));
+		java.util.Map<Integer, List<MovimientoDTO>> porCambio = new java.util.LinkedHashMap<>();
+		java.util.Map<Integer, Cambio> cabeceras = new java.util.LinkedHashMap<>();
+		for (Movimiento m : movimientoRepository.findCambiosRecientes(idLocal, desde,
+				org.springframework.data.domain.PageRequest.of(0, 100))) {
+			porCambio.computeIfAbsent(m.getCambio().getIdCambio(), k -> new ArrayList<>()).add(aDto(m));
+			cabeceras.putIfAbsent(m.getCambio().getIdCambio(), m.getCambio());
+		}
+		List<ReciboCambioDTO> respuesta = new ArrayList<>();
+		for (java.util.Map.Entry<Integer, List<MovimientoDTO>> e : porCambio.entrySet()) {
+			respuesta.add(reciboCambio(cabeceras.get(e.getKey()), e.getValue()));
+		}
+		return respuesta;
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<VentaResumenDTO> listarVentas(Integer idLocal, int dias) {
+		if (idLocal == null) {
+			throw new ReglaNegocioException("El local es obligatorio", HttpStatus.BAD_REQUEST);
+		}
+		LocalDateTime desde = LocalDateTime.now().minusDays(Math.max(dias, 1));
+		return movimientoRepository
+				.findVentasRecientes(idLocal, desde, org.springframework.data.domain.PageRequest.of(0, 50))
+				.stream().map(v -> {
+					VentaResumenDTO r = new VentaResumenDTO();
+					r.setIdVenta(v.getIdVenta());
+					r.setFechaHora(v.getFechaHora());
+					r.setTotal(v.getTotal());
+					r.setLineas(movimientoRepository.findByVentaIdVentaOrderByIdMovimientoAsc(v.getIdVenta())
+							.stream().map(this::aDto).toList());
+					return r;
+				}).toList();
+	}
+
+	private Venta exigirVentaOrigen(Integer idVenta, Integer idProducto) {
+		if (idVenta == null) {
+			throw new ReglaNegocioException("La venta de origen es obligatoria", HttpStatus.BAD_REQUEST);
+		}
+		Venta venta = ventaRepository.findById(idVenta)
+				.orElseThrow(() -> new ModeloNotFoundException("Venta no encontrada"));
+		if (!vendidoPorProducto(idVenta).containsKey(idProducto)) {
+			throw new ReglaNegocioException("La ficha no está en la venta N° " + idVenta, HttpStatus.BAD_REQUEST);
+		}
+		return venta;
+	}
+
+	private java.util.Map<Integer, BigDecimal> vendidoPorProducto(Integer idVenta) {
+		java.util.Map<Integer, BigDecimal> vendido = new java.util.HashMap<>();
+		for (Movimiento m : movimientoRepository.findByVentaIdVentaOrderByIdMovimientoAsc(idVenta)) {
+			vendido.merge(m.getProducto().getIdProducto(), m.getCantidad(), BigDecimal::add);
+		}
+		return vendido;
+	}
+
+	private void validarTope(Integer idVenta, Integer idProducto, BigDecimal cantidad) {
+		java.util.Map<Integer, BigDecimal> vendido = vendidoPorProducto(idVenta);
+		if (!vendido.containsKey(idProducto)) {
+			throw new ReglaNegocioException("La ficha no está en la venta N° " + idVenta, HttpStatus.BAD_REQUEST);
+		}
+		BigDecimal yaDevuelto = movimientoRepository.sumadoDevuelto(idVenta, idProducto);
+		BigDecimal pendiente = vendido.get(idProducto).subtract(yaDevuelto);
+		if (cantidad.compareTo(pendiente) > 0) {
+			throw new ReglaNegocioException("Solo quedan " + pendiente.stripTrailingZeros().toPlainString()
+					+ " por devolver en la venta N° " + idVenta, HttpStatus.BAD_REQUEST);
+		}
+	}
+
+	private Movimiento vincular(Movimiento movimiento, Cambio cabecera) {
+		movimiento.setCambio(cabecera);
+		return movimiento;
+	}
+
+	private ReciboCambioDTO reciboCambio(Cambio cabecera, List<MovimientoDTO> lineas) {
+		ReciboCambioDTO recibo = new ReciboCambioDTO();
+		recibo.setIdCambio(cabecera.getIdCambio());
+		recibo.setTipo(cabecera.getTipo());
+		recibo.setFechaHora(cabecera.getFechaHora());
+		recibo.setMotivo(cabecera.getMotivo());
+		recibo.setDiferencia(cabecera.getDiferencia());
+		recibo.setMontoDevuelto(cabecera.getMontoDevuelto());
+		recibo.setVuelveStock(cabecera.isVuelveStock());
+		recibo.setIdVenta(cabecera.getVenta() == null ? null : cabecera.getVenta().getIdVenta());
+		recibo.setLineas(lineas);
+		return recibo;
 	}
 
 	@Override
@@ -372,6 +554,7 @@ public class MovimientoService implements IMovimientoService {
 		dto.setIdProducto(movimiento.getProducto().getIdProducto());
 		dto.setNombreProducto(movimiento.getProducto().getNombre());
 		dto.setCodigoProducto(movimiento.getProducto().getCodigo());
+		dto.setTallaProducto(movimiento.getProducto().getTalla());
 		dto.setTipo(movimiento.getTipo());
 		dto.setCantidad(movimiento.getCantidad());
 		dto.setFechaHora(movimiento.getFechaHora());

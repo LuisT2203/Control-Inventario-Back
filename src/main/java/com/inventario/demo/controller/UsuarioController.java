@@ -19,7 +19,9 @@ import com.inventario.demo.Dto.LoginDTO;
 import com.inventario.demo.interfaces.UsuarioRepository;
 import com.inventario.demo.modelo.Usuario;
 import com.inventario.demo.service.JwtUtilService;
+import com.inventario.demo.service.LoginAttemptService;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
 @RestController
@@ -30,22 +32,31 @@ public class UsuarioController {
 	private final UserDetailsService userDetailsService;
 	private final UsuarioRepository usuarioRepository;
 	private final JwtUtilService jwtUtilService;
+	private final LoginAttemptService loginAttemptService;
 
 	public UsuarioController(AuthenticationManager authenticationManager, UserDetailsService userDetailsService,
-			UsuarioRepository usuarioRepository, JwtUtilService jwtUtilService) {
+			UsuarioRepository usuarioRepository, JwtUtilService jwtUtilService,
+			LoginAttemptService loginAttemptService) {
 		this.authenticationManager = authenticationManager;
 		this.userDetailsService = userDetailsService;
 		this.usuarioRepository = usuarioRepository;
 		this.jwtUtilService = jwtUtilService;
+		this.loginAttemptService = loginAttemptService;
 	}
 
 	@PostMapping("/login")
-	public ResponseEntity<?> login(@Valid @RequestBody LoginDTO loginDTO) {
+	public ResponseEntity<?> login(@Valid @RequestBody LoginDTO loginDTO, HttpServletRequest request) {
+		String clave = loginDTO.getUsuario() + "|" + ipCliente(request);
+		if (loginAttemptService.bloqueado(clave)) {
+			return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body("Error Authentication");
+		}
 		try {
 			authenticationManager.authenticate(
 					new UsernamePasswordAuthenticationToken(loginDTO.getUsuario(), loginDTO.getClave()));
+			loginAttemptService.registrarExito(clave);
 			return ResponseEntity.ok(tokens(loginDTO.getUsuario()));
 		} catch (Exception e) {
+			loginAttemptService.registrarFallo(clave);
 			return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Error Authentication");
 		}
 	}
@@ -56,13 +67,21 @@ public class UsuarioController {
 		try {
 			String username = jwtUtilService.extractUsername(refreshToken);
 			UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-			if (!jwtUtilService.validateToken(refreshToken, userDetails)) {
+			if (!userDetails.isEnabled() || !jwtUtilService.validateToken(refreshToken, userDetails)) {
 				return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid Refresh Token");
 			}
 			return ResponseEntity.ok(tokens(username));
 		} catch (Exception e) {
 			return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Error Refresh Token");
 		}
+	}
+
+	private String ipCliente(HttpServletRequest request) {
+		String reenviada = request.getHeader("X-Forwarded-For");
+		if (reenviada != null && !reenviada.isBlank()) {
+			return reenviada.split(",")[0].trim();
+		}
+		return request.getRemoteAddr();
 	}
 
 	private AuthResponseDto tokens(String username) {

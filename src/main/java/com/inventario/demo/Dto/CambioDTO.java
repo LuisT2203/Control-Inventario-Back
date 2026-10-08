@@ -25,4 +25,8 @@ public class CambioDTO {
 	private String personaRetira;
 	private String destino;
 	private BigDecimal precioUnitario;
+	private String motivo;
+
+	@NotNull(message = "La venta de origen es obligatoria")
+	private Integer idVenta;
 }

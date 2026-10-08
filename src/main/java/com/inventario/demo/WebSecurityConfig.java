@@ -13,6 +13,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+import jakarta.servlet.http.HttpServletResponse;
+
 import com.inventario.demo.filter.JwtRequestFilter;
 
 @Configuration
@@ -51,6 +53,8 @@ public class WebSecurityConfig {
 						.requestMatchers("/api/usuario/login", "/api/usuario/refresh").permitAll()
 						.anyRequest().authenticated())
 				.authenticationProvider(authenticationProvider())
+				.exceptionHandling(e -> e.authenticationEntryPoint(
+						(request, response, ex) -> response.sendError(HttpServletResponse.SC_UNAUTHORIZED)))
 				.addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class)
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 		return http.build();

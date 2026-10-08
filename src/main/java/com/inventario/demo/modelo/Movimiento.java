@@ -72,6 +72,10 @@ public class Movimiento {
 	private Venta venta;
 
 	@ManyToOne
+	@JoinColumn(name = "id_cambio")
+	private Cambio cambio;
+
+	@ManyToOne
 	@JoinColumn(name = "id_compra")
 	private Compra compra;
 

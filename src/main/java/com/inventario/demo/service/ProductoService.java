@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.inventario.demo.Dto.BusquedaProductosDTO;
 import com.inventario.demo.Dto.CategoriaConteoDTO;
 import com.inventario.demo.Dto.PrecioCostoDTO;
+import com.inventario.demo.Dto.SiguienteCodigoDTO;
 import com.inventario.demo.Dto.MovimientoDTO;
 import com.inventario.demo.Dto.ProductoDTO;
 import com.inventario.demo.interfaces.LocalRepository;
@@ -95,6 +96,50 @@ public class ProductoService implements IProductoService {
 	@Transactional(readOnly = true)
 	public ProductoDTO listarId(Integer id) {
 		return productoMapper.aDto(buscar(id));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public SiguienteCodigoDTO siguienteCodigo(Integer idLocal, String categoria) {
+		if (idLocal == null) {
+			throw new ReglaNegocioException("El local es obligatorio", HttpStatus.BAD_REQUEST);
+		}
+		if (categoria == null || categoria.isBlank()) {
+			throw new ReglaNegocioException("La categoria es obligatoria", HttpStatus.BAD_REQUEST);
+		}
+		java.util.Map<String, java.util.List<Integer>> porPrefijo = new java.util.LinkedHashMap<>();
+		java.util.Map<String, Integer> anchos = new java.util.HashMap<>();
+		for (String codigo : productoRepository.findCodigosPorCategoria(idLocal, categoria.trim())) {
+			java.util.regex.Matcher m = java.util.regex.Pattern.compile("^([A-ZÑ]+)-(\\d+)$")
+					.matcher(codigo.trim().toUpperCase());
+			if (!m.matches()) {
+				continue;
+			}
+			porPrefijo.computeIfAbsent(m.group(1), k -> new ArrayList<>()).add(Integer.parseInt(m.group(2)));
+			anchos.merge(m.group(1), m.group(2).length(), Math::max);
+		}
+		SiguienteCodigoDTO respuesta = new SiguienteCodigoDTO();
+		if (porPrefijo.isEmpty()) {
+			return respuesta;
+		}
+		String prefijo = null;
+		int votos = -1;
+		int maximo = -1;
+		for (java.util.Map.Entry<String, java.util.List<Integer>> e : porPrefijo.entrySet()) {
+			int local = e.getValue().stream().mapToInt(Integer::intValue).max().orElse(-1);
+			if (e.getValue().size() > votos || (e.getValue().size() == votos && local > maximo)) {
+				prefijo = e.getKey();
+				votos = e.getValue().size();
+				maximo = local;
+			}
+		}
+		int siguiente = maximo + 1;
+		String numero = String.format("%0" + Math.max(anchos.get(prefijo), String.valueOf(siguiente).length())
+				+ "d", siguiente);
+		respuesta.setPrefijo(prefijo);
+		respuesta.setSiguiente(siguiente);
+		respuesta.setCodigo(prefijo + "-" + numero);
+		return respuesta;
 	}
 
 	@Override
@@ -201,7 +246,7 @@ public class ProductoService implements IProductoService {
 	private void copiarDatos(Producto producto, ProductoDTO dto, String codigo) {
 		producto.setCodigo(codigo);
 		producto.setNombre(dto.getNombre().trim());
-		producto.setTipo(blancoANulo(dto.getTipo()));
+		producto.setTipo(blancoANulo(dto.getTipo() == null ? null : dto.getTipo().replaceAll("\\s+", " ")));
 		producto.setTalla(blancoANulo(dto.getTalla()));
 		producto.setDetalle(blancoANulo(dto.getDetalle()));
 		producto.setUnidad(dto.getUnidad() == null ? UnidadMedida.UND : dto.getUnidad());
