@@ -45,7 +45,7 @@ public class AdminInicial implements CommandLineRunner {
 	public void run(String... args) {
 		if (localRepository.count() == 0) {
 			crearLocal("UNIFORMES", "Uniformes", true);
-			crearLocal("RELIGIOSOS", "Articulos religiosos", false);
+			crearLocal("RELIGIOSOS", "Palacio de la Medalla Milagrosa", false);
 		}
 		rolRepository.findByNombreRol("ADMIN").orElseGet(() -> {
 			Rol rol = new Rol();

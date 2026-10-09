@@ -42,7 +42,7 @@ public class DatosIniciales implements CommandLineRunner {
 			return;
 		}
 		crearLocal("UNIFORMES", "Uniformes", true);
-		crearLocal("RELIGIOSOS", "Articulos religiosos", false);
+		crearLocal("RELIGIOSOS", "Palacio de la Medalla Milagrosa", false);
 	}
 
 	private void crearUsuario(String nombre, String clave, Rol rol) {
