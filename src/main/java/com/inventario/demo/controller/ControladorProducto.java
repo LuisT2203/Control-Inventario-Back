@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.inventario.demo.Dto.PrecioCostoDTO;
 import com.inventario.demo.Dto.ProductoDTO;
+import com.inventario.demo.interfacesService.IImportacionService;
 import com.inventario.demo.interfacesService.IProductoService;
 import com.inventario.demo.utils.MensajeResponse;
 
@@ -27,9 +28,11 @@ import jakarta.validation.Valid;
 public class ControladorProducto {
 
 	private final IProductoService productoService;
+	private final IImportacionService importacionService;
 
-	public ControladorProducto(IProductoService productoService) {
+	public ControladorProducto(IProductoService productoService, IImportacionService importacionService) {
 		this.productoService = productoService;
+		this.importacionService = importacionService;
 	}
 
 	@GetMapping("/listarProductos")
@@ -104,5 +107,18 @@ public class ControladorProducto {
 	public ResponseEntity<MensajeResponse> eliminar(@PathVariable Integer id) {
 		productoService.borrar(id);
 		return ResponseEntity.ok(MensajeResponse.builder().mensaje("Ficha eliminada").object(null).build());
+	}
+
+	@PostMapping(value = "/importarExcel", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	public ResponseEntity<MensajeResponse> importar(
+			@RequestParam("archivo") org.springframework.web.multipart.MultipartFile archivo,
+			@RequestParam Integer idLocal, @RequestParam String origen,
+			@RequestParam(defaultValue = "true") boolean previa) {
+		if (previa) {
+			return ResponseEntity.ok(MensajeResponse.builder().mensaje("Vista previa de importación")
+					.object(importacionService.previsualizar(idLocal, origen, archivo)).build());
+		}
+		return ResponseEntity.ok(MensajeResponse.builder().mensaje("Importación terminada")
+				.object(importacionService.ejecutar(idLocal, origen, archivo)).build());
 	}
 }

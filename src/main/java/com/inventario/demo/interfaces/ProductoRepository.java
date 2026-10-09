@@ -22,6 +22,10 @@ public interface ProductoRepository extends JpaRepository<Producto, Integer> {
 
 	List<Producto> findByLocalIdLocalAndActivoTrueOrderByNombreAsc(Integer idLocal);
 
+	List<Producto> findByLocalIdLocal(Integer idLocal);
+
+	Optional<Producto> findByLocalIdLocalAndCodigoIgnoreCase(Integer idLocal, String codigo);
+
 	@Query("""
 			select p from Producto p
 			where p.local.idLocal = :idLocal
