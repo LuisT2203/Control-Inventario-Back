@@ -178,6 +178,7 @@ class ProductoServiceTest {
 
 	@Test
 	void siguienteCodigoProponeElQueSigue() {
+		when(localRepository.findById(1)).thenReturn(Optional.of(local(true)));
 		when(productoRepository.findCodigosPorCategoria(1, "BLUSAS"))
 				.thenReturn(java.util.List.of("BLU-01", "BLU-08", "BLU-03", "XX-99"));
 
@@ -186,16 +187,66 @@ class ProductoServiceTest {
 		assertEquals("BLU", r.getPrefijo());
 		assertEquals(9, r.getSiguiente());
 		assertEquals("BLU-09", r.getCodigo());
+		assertEquals(false, r.isNuevaSerie());
 	}
 
 	@Test
-	void siguienteCodigoSinPreviosDevuelveNulos() {
+	void serieNuevaVariasPalabrasSugiereIniciales() {
+		when(localRepository.findById(1)).thenReturn(Optional.of(local(true)));
+		when(productoRepository.findCodigosPorCategoria(1, "Pantalon Corto")).thenReturn(java.util.List.of());
+
+		var r = service.siguienteCodigo(1, "Pantalon Corto");
+
+		assertEquals("PC", r.getPrefijo());
+		assertEquals(1, r.getSiguiente());
+		assertEquals("PC-01", r.getCodigo());
+		assertEquals(true, r.isNuevaSerie());
+	}
+
+	@Test
+	void serieNuevaUnaPalabraSugiereTresLetras() {
+		when(localRepository.findById(1)).thenReturn(Optional.of(local(true)));
+		when(productoRepository.findCodigosPorCategoria(1, "Chalinas")).thenReturn(java.util.List.of());
+
+		var r = service.siguienteCodigo(1, "Chalinas");
+
+		assertEquals("CHA", r.getPrefijo());
+		assertEquals("CHA-01", r.getCodigo());
+		assertEquals(true, r.isNuevaSerie());
+	}
+
+	@Test
+	void serieNuevaReligiosaUsaTresDigitos() {
+		when(localRepository.findById(1)).thenReturn(Optional.of(local(false)));
+		when(productoRepository.findCodigosPorCategoria(1, "Rosarios")).thenReturn(java.util.List.of());
+
+		var r = service.siguienteCodigo(1, "Rosarios");
+
+		assertEquals("ROS", r.getPrefijo());
+		assertEquals("ROS-001", r.getCodigo());
+		assertEquals(true, r.isNuevaSerie());
+	}
+
+	@Test
+	void serieNuevaSinLetrasSeRechaza() {
+		when(localRepository.findById(1)).thenReturn(Optional.of(local(true)));
+		when(productoRepository.findCodigosPorCategoria(1, "123")).thenReturn(java.util.List.of());
+
+		ReglaNegocioException error = assertThrows(ReglaNegocioException.class,
+				() -> service.siguienteCodigo(1, "123"));
+		assertEquals(HttpStatus.BAD_REQUEST, error.getStatus());
+	}
+
+	@Test
+	void siguienteCodigoSinPreviosSugiereSerie() {
+		when(localRepository.findById(1)).thenReturn(Optional.of(local(true)));
 		when(productoRepository.findCodigosPorCategoria(1, "NUEVA"))
 				.thenReturn(java.util.List.of());
 
 		var r = service.siguienteCodigo(1, "NUEVA");
 
-		assertNull(r.getCodigo());
+		assertEquals("NUE-01", r.getCodigo());
+		assertEquals(true, r.isNuevaSerie());
 	}
 
 	private ProductoDTO ficha(String tipo, String talla) {

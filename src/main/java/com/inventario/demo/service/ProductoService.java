@@ -107,6 +107,8 @@ public class ProductoService implements IProductoService {
 		if (categoria == null || categoria.isBlank()) {
 			throw new ReglaNegocioException("La categoria es obligatoria", HttpStatus.BAD_REQUEST);
 		}
+		Local tienda = localRepository.findById(idLocal)
+				.orElseThrow(() -> new ModeloNotFoundException("Local no encontrado"));
 		java.util.Map<String, java.util.List<Integer>> porPrefijo = new java.util.LinkedHashMap<>();
 		java.util.Map<String, Integer> anchos = new java.util.HashMap<>();
 		for (String codigo : productoRepository.findCodigosPorCategoria(idLocal, categoria.trim())) {
@@ -120,6 +122,12 @@ public class ProductoService implements IProductoService {
 		}
 		SiguienteCodigoDTO respuesta = new SiguienteCodigoDTO();
 		if (porPrefijo.isEmpty()) {
+			String prefijo = prefijoSugerido(categoria);
+			int ancho = tienda.isExigeTalla() ? 2 : 3;
+			respuesta.setPrefijo(prefijo);
+			respuesta.setSiguiente(1);
+			respuesta.setCodigo(prefijo + "-" + String.format("%0" + ancho + "d", 1));
+			respuesta.setNuevaSerie(true);
 			return respuesta;
 		}
 		String prefijo = null;
@@ -139,7 +147,32 @@ public class ProductoService implements IProductoService {
 		respuesta.setPrefijo(prefijo);
 		respuesta.setSiguiente(siguiente);
 		respuesta.setCodigo(prefijo + "-" + numero);
+		respuesta.setNuevaSerie(false);
 		return respuesta;
+	}
+
+	private String prefijoSugerido(String categoria) {
+		List<String> palabras = new ArrayList<>();
+		for (String parte : categoria.trim().toUpperCase().split("[^A-ZÑ]+")) {
+			if (!parte.isBlank()) {
+				palabras.add(parte);
+			}
+		}
+		if (palabras.isEmpty()) {
+			throw new ReglaNegocioException("La categoria debe tener letras", HttpStatus.BAD_REQUEST);
+		}
+		StringBuilder prefijo = new StringBuilder();
+		if (palabras.size() == 1) {
+			prefijo.append(palabras.get(0), 0, Math.min(3, palabras.get(0).length()));
+		} else {
+			for (int i = 0; i < Math.min(3, palabras.size()); i++) {
+				prefijo.append(palabras.get(i).charAt(0));
+			}
+		}
+		if (prefijo.length() < 2) {
+			throw new ReglaNegocioException("La categoria debe tener letras", HttpStatus.BAD_REQUEST);
+		}
+		return prefijo.toString();
 	}
 
 	@Override

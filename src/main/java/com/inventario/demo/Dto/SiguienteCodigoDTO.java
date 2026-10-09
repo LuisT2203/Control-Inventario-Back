@@ -10,4 +10,5 @@ public class SiguienteCodigoDTO {
 	private String prefijo;
 	private Integer siguiente;
 	private String codigo;
+	private boolean nuevaSerie;
 }
