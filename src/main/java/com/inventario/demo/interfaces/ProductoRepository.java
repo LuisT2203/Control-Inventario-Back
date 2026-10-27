@@ -52,6 +52,26 @@ public interface ProductoRepository extends JpaRepository<Producto, Integer> {
 	org.springframework.data.domain.Page<Producto> buscar(Integer idLocal, String texto, String categoria,
 			boolean bajoStock, boolean sinPrecio, org.springframework.data.domain.Pageable pageable);
 
+	@Query("""
+			select new com.inventario.demo.Dto.ResumenProductosDTO(
+				count(p),
+				coalesce(sum(p.stock * p.costoReferencia), 0),
+				coalesce(sum(p.stock * p.precioVenta), 0),
+				coalesce(sum((p.precioVenta - p.costoReferencia) * p.stock), 0),
+				coalesce(sum(case when p.stock is null or p.costoReferencia is null then 1 else 0 end), 0),
+				coalesce(sum(case when p.stock is null or p.precioVenta is null then 1 else 0 end), 0),
+				coalesce(sum(case when p.precioVenta is null or p.costoReferencia is null then 1 else 0 end), 0))
+			from Producto p
+			where p.local.idLocal = :idLocal
+			and p.activo = true
+			and (:texto is null or :texto = '' or upper(p.codigo) like concat('%', upper(:texto), '%') or upper(p.nombre) like concat('%', upper(:texto), '%'))
+			and (:categoria is null or :categoria = '' or p.tipo = :categoria)
+			and (:bajoStock = false or p.stock <= coalesce(p.stockMinimo, 0))
+			and (:sinPrecio = false or p.precioVenta is null)
+			""")
+	com.inventario.demo.Dto.ResumenProductosDTO resumen(Integer idLocal, String texto, String categoria,
+			boolean bajoStock, boolean sinPrecio);
+
 	@Query("select distinct p.tipo from Producto p where p.local.idLocal = :idLocal and p.tipo is not null order by p.tipo")
 	List<String> findCategorias(Integer idLocal);
 

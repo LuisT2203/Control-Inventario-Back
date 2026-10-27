@@ -14,6 +14,7 @@ import com.inventario.demo.Dto.PrecioCostoDTO;
 import com.inventario.demo.Dto.SiguienteCodigoDTO;
 import com.inventario.demo.Dto.MovimientoDTO;
 import com.inventario.demo.Dto.ProductoDTO;
+import com.inventario.demo.Dto.ResumenProductosDTO;
 import com.inventario.demo.interfaces.LocalRepository;
 import com.inventario.demo.interfaces.MovimientoRepository;
 import com.inventario.demo.interfaces.ProductoRepository;
@@ -96,6 +97,17 @@ public class ProductoService implements IProductoService {
 	@Transactional(readOnly = true)
 	public ProductoDTO listarId(Integer id) {
 		return productoMapper.aDto(buscar(id));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public ResumenProductosDTO resumen(Integer idLocal, String texto, String categoria, boolean bajoStock,
+			boolean sinPrecio) {
+		if (idLocal == null) {
+			throw new ReglaNegocioException("El local es obligatorio", HttpStatus.BAD_REQUEST);
+		}
+		return productoRepository.resumen(idLocal, texto == null ? "" : texto.trim(),
+				categoria == null ? "" : categoria, bajoStock, sinPrecio);
 	}
 
 	@Override

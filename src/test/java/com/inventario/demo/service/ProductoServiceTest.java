@@ -19,6 +19,7 @@ import org.springframework.http.HttpStatus;
 
 import com.inventario.demo.Dto.PrecioCostoDTO;
 import com.inventario.demo.Dto.ProductoDTO;
+import com.inventario.demo.Dto.ResumenProductosDTO;
 import com.inventario.demo.interfaces.LocalRepository;
 import com.inventario.demo.interfaces.MovimientoRepository;
 import com.inventario.demo.interfaces.ProductoRepository;
@@ -247,6 +248,44 @@ class ProductoServiceTest {
 
 		assertEquals("NUE-01", r.getCodigo());
 		assertEquals(true, r.isNuevaSerie());
+	}
+
+	@Test
+	void resumenExigeLocal() {
+		ReglaNegocioException error = assertThrows(ReglaNegocioException.class,
+				() -> service.resumen(null, "", null, false, false));
+
+		assertEquals(HttpStatus.BAD_REQUEST, error.getStatus());
+		verify(productoRepository, never()).resumen(org.mockito.ArgumentMatchers.any(),
+				org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+				org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.anyBoolean());
+	}
+
+	@Test
+	void resumenNormalizaTextoYCategoria() {
+		when(productoRepository.resumen(1, "chompa", "Tejidos", true, false))
+				.thenReturn(new ResumenProductosDTO(0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 0, 0, 0));
+
+		service.resumen(1, "  chompa  ", "Tejidos", true, false);
+
+		verify(productoRepository).resumen(1, "chompa", "Tejidos", true, false);
+	}
+
+	@Test
+	void resumenDevuelveLosTotalesDelRepositorio() {
+		ResumenProductosDTO esperado = new ResumenProductosDTO(428, new BigDecimal("1520.50"),
+				new BigDecimal("3900.00"), new BigDecimal("2100.75"), 3, 5, 7);
+		when(productoRepository.resumen(1, "", "", false, false)).thenReturn(esperado);
+
+		ResumenProductosDTO r = service.resumen(1, null, null, false, false);
+
+		assertEquals(428, r.getFichas());
+		assertEquals(new BigDecimal("1520.50"), r.getCostoTotal());
+		assertEquals(new BigDecimal("3900.00"), r.getValorStock());
+		assertEquals(new BigDecimal("2100.75"), r.getGanancia());
+		assertEquals(3, r.getSinCosto());
+		assertEquals(5, r.getSinPrecio());
+		assertEquals(7, r.getSinGanancia());
 	}
 
 	private ProductoDTO ficha(String tipo, String talla) {

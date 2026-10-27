@@ -55,6 +55,16 @@ public class ControladorProducto {
 				.build());
 	}
 
+	@GetMapping("/resumenProductos")
+	public ResponseEntity<MensajeResponse> resumen(@RequestParam Integer localId,
+			@RequestParam(defaultValue = "") String texto,
+			@RequestParam(required = false) String categoria,
+			@RequestParam(defaultValue = "false") boolean bajoStock,
+			@RequestParam(defaultValue = "false") boolean sinPrecio) {
+		return ResponseEntity.ok(MensajeResponse.builder().mensaje("Resumen de inventario")
+				.object(productoService.resumen(localId, texto, categoria, bajoStock, sinPrecio)).build());
+	}
+
 	@GetMapping("/listarCategorias")
 	public ResponseEntity<MensajeResponse> categorias(@RequestParam Integer localId) {
 		return ResponseEntity.ok(MensajeResponse.builder().mensaje("Categorias encontradas")

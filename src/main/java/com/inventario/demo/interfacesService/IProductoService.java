@@ -6,6 +6,7 @@ import com.inventario.demo.Dto.BusquedaProductosDTO;
 import com.inventario.demo.Dto.CategoriaConteoDTO;
 import com.inventario.demo.Dto.PrecioCostoDTO;
 import com.inventario.demo.Dto.ProductoDTO;
+import com.inventario.demo.Dto.ResumenProductosDTO;
 import com.inventario.demo.Dto.SiguienteCodigoDTO;
 
 public interface IProductoService {
@@ -13,6 +14,8 @@ public interface IProductoService {
 	List<ProductoDTO> listar(Integer idLocal, boolean bajoStock);
 
 	BusquedaProductosDTO buscar(Integer idLocal, String texto, String categoria, boolean bajoStock, boolean sinPrecio, int pagina, int tamano);
+
+	ResumenProductosDTO resumen(Integer idLocal, String texto, String categoria, boolean bajoStock, boolean sinPrecio);
 
 	List<String> listarCategorias(Integer idLocal);
 
